@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How to Connect to Amazon APIs</title>
+    <style>
+        *, *::before, *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            line-height: 1.6;
+            color: #1a1a2e;
+            background-color: #f8f9fa;
+        }
+
+        header {
+            background: linear-gradient(135deg, #232f3e, #37475a);
+            color: #fff;
+            padding: 3rem 1.5rem;
+            text-align: center;
+        }
+
+        header h1 {
+            font-size: 2.2rem;
+            margin-bottom: 0.5rem;
+        }
+
+        header p {
+            font-size: 1.1rem;
+            opacity: 0.85;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        main {
+            max-width: 860px;
+            margin: 2rem auto;
+            padding: 0 1.5rem 4rem;
+        }
+
+        .step {
+            background: #fff;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+            padding: 2rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .step-number {
+            display: inline-block;
+            background: #ff9900;
+            color: #fff;
+            font-weight: 700;
+            width: 32px;
+            height: 32px;
+            line-height: 32px;
+            text-align: center;
+            border-radius: 50%;
+            margin-right: 0.75rem;
+            font-size: 0.9rem;
+        }
+
+        .step h2 {
+            display: inline;
+            font-size: 1.3rem;
+            vertical-align: middle;
+        }
+
+        .step-body {
+            margin-top: 1rem;
+        }
+
+        .step-body p {
+            margin-bottom: 0.75rem;
+        }
+
+        .step-body ul, .step-body ol {
+            margin: 0.75rem 0 0.75rem 1.5rem;
+        }
+
+        .step-body li {
+            margin-bottom: 0.4rem;
+        }
+
+        pre {
+            background: #1a1a2e;
+            color: #e2e8f0;
+            border-radius: 6px;
+            padding: 1rem 1.25rem;
+            overflow-x: auto;
+            font-size: 0.9rem;
+            margin: 1rem 0;
+        }
+
+        code {
+            font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+        }
+
+        .inline-code {
+            background: #eef0f4;
+            padding: 0.15rem 0.4rem;
+            border-radius: 4px;
+            font-size: 0.88em;
+        }
+
+        .warning {
+            background: #fff8e1;
+            border-left: 4px solid #ff9900;
+            padding: 1rem 1.25rem;
+            border-radius: 0 6px 6px 0;
+            margin: 1rem 0;
+        }
+
+        .warning strong {
+            color: #b36b00;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1rem 0;
+            font-size: 0.95rem;
+        }
+
+        th, td {
+            text-align: left;
+            padding: 0.6rem 0.75rem;
+            border-bottom: 1px solid #e2e8f0;
+        }
+
+        th {
+            background: #f1f3f5;
+            font-weight: 600;
+        }
+
+        a {
+            color: #0073bb;
+        }
+
+        footer {
+            text-align: center;
+            padding: 2rem 1rem;
+            color: #6c757d;
+            font-size: 0.85rem;
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    <h1>Connecting to Amazon APIs</h1>
+    <p>A step-by-step guide to setting up AWS credentials, installing the SDK, and making your first API calls.</p>
+</header>
+
+<main>
+
+    <!-- Step 1 -->
+    <section class="step">
+        <span class="step-number">1</span>
+        <h2>Create an AWS Account</h2>
+        <div class="step-body">
+            <p>If you don't already have one, sign up for an AWS account:</p>
+            <ol>
+                <li>Go to <a href="https://aws.amazon.com/" target="_blank" rel="noopener">aws.amazon.com</a> and click <strong>Create an AWS Account</strong>.</li>
+                <li>Follow the prompts to enter your email, set a password, and provide payment information.</li>
+                <li>Choose a support plan (the free tier is fine for getting started).</li>
+            </ol>
+        </div>
+    </section>
+
+    <!-- Step 2 -->
+    <section class="step">
+        <span class="step-number">2</span>
+        <h2>Create an IAM User &amp; Access Keys</h2>
+        <div class="step-body">
+            <p>Never use your root account credentials for API access. Instead, create a dedicated IAM user:</p>
+            <ol>
+                <li>Open the <strong>IAM Console</strong> in AWS.</li>
+                <li>Navigate to <strong>Users &rarr; Create user</strong>.</li>
+                <li>Give the user a name (e.g., <span class="inline-code">api-user</span>) and attach the permissions policies your application needs.</li>
+                <li>After creating the user, go to <strong>Security credentials &rarr; Create access key</strong>.</li>
+                <li>Select the <strong>Application running outside AWS</strong> use case.</li>
+                <li>Save the <strong>Access Key ID</strong> and <strong>Secret Access Key</strong> securely.</li>
+            </ol>
+            <div class="warning">
+                <strong>Security tip:</strong> Never commit your access keys to source control. Use environment variables or a credentials file instead.
+            </div>
+        </div>
+    </section>
+
+    <!-- Step 3 -->
+    <section class="step">
+        <span class="step-number">3</span>
+        <h2>Install &amp; Configure the AWS CLI</h2>
+        <div class="step-body">
+            <p>The AWS CLI lets you interact with services from your terminal and stores your credentials for SDK use.</p>
+            <pre><code># Install the AWS CLI (macOS / Linux)
+curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+unzip awscliv2.zip
+sudo ./aws/install
+
+# Configure your credentials
+aws configure</code></pre>
+            <p>When prompted, enter your Access Key ID, Secret Access Key, default region (e.g., <span class="inline-code">us-east-1</span>), and output format (<span class="inline-code">json</span>).</p>
+            <p>This creates two files:</p>
+            <ul>
+                <li><span class="inline-code">~/.aws/credentials</span> &mdash; stores your access keys</li>
+                <li><span class="inline-code">~/.aws/config</span> &mdash; stores region and output preferences</li>
+            </ul>
+        </div>
+    </section>
+
+    <!-- Step 4 -->
+    <section class="step">
+        <span class="step-number">4</span>
+        <h2>Install an AWS SDK</h2>
+        <div class="step-body">
+            <p>Choose the SDK for your preferred language:</p>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Language</th>
+                        <th>Install Command</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Python (Boto3)</td>
+                        <td><span class="inline-code">pip install boto3</span></td>
+                    </tr>
+                    <tr>
+                        <td>JavaScript / Node.js</td>
+                        <td><span class="inline-code">npm install @aws-sdk/client-s3</span></td>
+                    </tr>
+                    <tr>
+                        <td>Java</td>
+                        <td>Add the <span class="inline-code">software.amazon.awssdk</span> BOM to Maven/Gradle</td>
+                    </tr>
+                    <tr>
+                        <td>Go</td>
+                        <td><span class="inline-code">go get github.com/aws/aws-sdk-go-v2</span></td>
+                    </tr>
+                    <tr>
+                        <td>.NET</td>
+                        <td><span class="inline-code">dotnet add package AWSSDK.Core</span></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <!-- Step 5 -->
+    <section class="step">
+        <span class="step-number">5</span>
+        <h2>Make Your First API Call</h2>
+        <div class="step-body">
+            <p>Here are quick examples that list your S3 buckets to verify everything works.</p>
+
+            <h3 style="margin-top:1.25rem; font-size:1rem;">Python (Boto3)</h3>
+            <pre><code>import boto3
+
+s3 = boto3.client("s3")
+response = s3.list_buckets()
+
+for bucket in response["Buckets"]:
+    print(bucket["Name"])</code></pre>
+
+            <h3 style="margin-top:1.25rem; font-size:1rem;">JavaScript (Node.js v3 SDK)</h3>
+            <pre><code>import { S3Client, ListBucketsCommand } from "@aws-sdk/client-s3";
+
+const client = new S3Client({ region: "us-east-1" });
+const { Buckets } = await client.send(new ListBucketsCommand({}));
+
+Buckets.forEach((b) => console.log(b.Name));</code></pre>
+
+            <p>If you see your bucket names printed, your credentials and SDK are configured correctly.</p>
+        </div>
+    </section>
+
+    <!-- Step 6 -->
+    <section class="step">
+        <span class="step-number">6</span>
+        <h2>Use Environment Variables (Alternative)</h2>
+        <div class="step-body">
+            <p>Instead of <span class="inline-code">aws configure</span>, you can pass credentials via environment variables. This is common in CI/CD and container environments:</p>
+            <pre><code>export AWS_ACCESS_KEY_ID="your-access-key-id"
+export AWS_SECRET_ACCESS_KEY="your-secret-access-key"
+export AWS_DEFAULT_REGION="us-east-1"</code></pre>
+            <p>The SDKs automatically pick up these variables&mdash;no code changes needed.</p>
+        </div>
+    </section>
+
+    <!-- Step 7 -->
+    <section class="step">
+        <span class="step-number">7</span>
+        <h2>Common Amazon API Services</h2>
+        <div class="step-body">
+            <p>Once connected, you can interact with hundreds of AWS services. Here are some of the most popular:</p>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Service</th>
+                        <th>Description</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><strong>S3</strong></td>
+                        <td>Object storage for files, backups, and static assets</td>
+                    </tr>
+                    <tr>
+                        <td><strong>DynamoDB</strong></td>
+                        <td>Managed NoSQL database</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Lambda</strong></td>
+                        <td>Run code without provisioning servers</td>
+                    </tr>
+                    <tr>
+                        <td><strong>SQS</strong></td>
+                        <td>Managed message queuing</td>
+                    </tr>
+                    <tr>
+                        <td><strong>SES</strong></td>
+                        <td>Send transactional and marketing emails</td>
+                    </tr>
+                    <tr>
+                        <td><strong>EC2</strong></td>
+                        <td>Virtual servers in the cloud</td>
+                    </tr>
+                    <tr>
+                        <td><strong>API Gateway</strong></td>
+                        <td>Build, deploy, and manage REST/WebSocket APIs</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <!-- Step 8 -->
+    <section class="step">
+        <span class="step-number">8</span>
+        <h2>Troubleshooting</h2>
+        <div class="step-body">
+            <ul>
+                <li><strong>InvalidClientTokenId</strong> &mdash; Double-check your Access Key ID is correct and the IAM user is active.</li>
+                <li><strong>SignatureDoesNotMatch</strong> &mdash; Verify your Secret Access Key has no extra whitespace.</li>
+                <li><strong>AccessDenied</strong> &mdash; Ensure the IAM user has the required permissions policy attached.</li>
+                <li><strong>Region errors</strong> &mdash; Confirm you're using the correct region for the resource you're trying to access.</li>
+                <li><strong>ExpiredToken</strong> &mdash; If using temporary credentials (STS), request a new session token.</li>
+            </ul>
+        </div>
+    </section>
+
+</main>
+
+<footer>
+    <p>&copy; 2026 Amazon API Connection Guide</p>
+</footer>
+
+</body>
+</html>
