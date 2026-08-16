@@ -6,11 +6,14 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.location.LocationManager
 import android.net.wifi.ScanResult
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.SystemClock
 import androidx.core.content.ContextCompat
+import androidx.core.location.LocationManagerCompat
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -31,7 +34,15 @@ data class WifiState(
     val connectedLinkSpeedMbps: Int? = null,
     val lastResultsAgeMs: Long = 0L,
     val scansInLastTwoMinutes: Int = 0,
-    val throttled: Boolean = false
+    val throttled: Boolean = false,
+    // --- diagnostics: why is the list empty? ---
+    val nearbyPermission: Boolean = false,
+    val locationPermission: Boolean = false,
+    val locationServicesOn: Boolean = true,
+    /** Entries returned by the platform before any of our own filtering. */
+    val rawResultCount: Int = 0,
+    val pollCount: Long = 0L,
+    val lastError: String? = null
 )
 
 /**
@@ -76,8 +87,19 @@ class WifiScanner(private val context: Context) {
         pollJob?.cancel()
         pollJob = scope.launch {
             while (isActive) {
-                requestScanIfAllowed()
-                refreshFromCache()
+                // One bad poll must never kill the loop: an uncaught throw here
+                // would stop every future refresh and leave the whole app dead
+                // with no visible cause.
+                try {
+                    requestScanIfAllowed()
+                    refreshFromCache()
+                } catch (cancellation: CancellationException) {
+                    throw cancellation
+                } catch (error: Throwable) {
+                    _state.value = _state.value.copy(
+                        lastError = "${error.javaClass.simpleName}: ${error.message}"
+                    )
+                }
                 delay(POLL_INTERVAL_MS)
             }
         }
@@ -110,21 +132,47 @@ class WifiScanner(private val context: Context) {
         }
     }
 
-    private fun hasScanPermission(): Boolean {
-        val needed = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            Manifest.permission.NEARBY_WIFI_DEVICES
-        } else {
-            Manifest.permission.ACCESS_FINE_LOCATION
-        }
-        return ContextCompat.checkSelfPermission(context, needed) ==
+    private fun granted(permission: String): Boolean =
+        ContextCompat.checkSelfPermission(context, permission) ==
             PackageManager.PERMISSION_GRANTED
+
+    private fun hasNearbyPermission(): Boolean =
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            granted(Manifest.permission.NEARBY_WIFI_DEVICES)
+
+    private fun hasLocationPermission(): Boolean =
+        granted(Manifest.permission.ACCESS_FINE_LOCATION) ||
+            granted(Manifest.permission.ACCESS_COARSE_LOCATION)
+
+    /**
+     * Either permission unlocks scan results. Requiring only the newer
+     * NEARBY_WIFI_DEVICES leaves no fallback on devices that still gate the
+     * scan list behind location, which reads to the user as "the app is
+     * broken" rather than "a permission is missing".
+     */
+    private fun hasScanPermission(): Boolean = hasNearbyPermission() || hasLocationPermission()
+
+    /** Scan results stay empty on most builds while location services are off. */
+    private fun locationServicesEnabled(): Boolean {
+        val manager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
+            ?: return true
+        return runCatching {
+            LocationManagerCompat.isLocationEnabled(manager)
+        }.getOrDefault(true)
     }
 
     /** Read the platform's cached scan list and fold it into [state]. */
     fun refreshFromCache() {
         val permitted = hasScanPermission()
         if (!permitted) {
-            _state.value = _state.value.copy(hasPermission = false, wifiEnabled = wifiManager.isWifiEnabled)
+            _state.value = _state.value.copy(
+                hasPermission = false,
+                wifiEnabled = wifiManager.isWifiEnabled,
+                nearbyPermission = hasNearbyPermission(),
+                locationPermission = hasLocationPermission(),
+                locationServicesOn = locationServicesEnabled(),
+                pollCount = _state.value.pollCount + 1
+            )
             return
         }
 
@@ -136,8 +184,10 @@ class WifiScanner(private val context: Context) {
             ?.removeSurrounding("\"")
             ?.takeIf { it.isNotBlank() && it != "<unknown ssid>" }
 
-        val results: List<ScanResult> = runCatching { wifiManager.scanResults }
-            .getOrDefault(emptyList())
+        val scanAttempt = runCatching { wifiManager.scanResults }
+        val results: List<ScanResult> = scanAttempt.getOrDefault(emptyList())
+        val scanError = scanAttempt.exceptionOrNull()
+            ?.let { "${it.javaClass.simpleName}: ${it.message}" }
 
         val now = SystemClock.elapsedRealtime()
         val points = results.mapNotNull { it.toAccessPoint(now, connectedBssid) }
@@ -157,7 +207,13 @@ class WifiScanner(private val context: Context) {
             connectedLinkSpeedMbps = info?.linkSpeed?.takeIf { it > 0 },
             lastResultsAgeMs = freshest,
             scansInLastTwoMinutes = activeScans,
-            throttled = activeScans >= MAX_SCANS_PER_WINDOW
+            throttled = activeScans >= MAX_SCANS_PER_WINDOW,
+            nearbyPermission = hasNearbyPermission(),
+            locationPermission = hasLocationPermission(),
+            locationServicesOn = locationServicesEnabled(),
+            rawResultCount = results.size,
+            pollCount = _state.value.pollCount + 1,
+            lastError = scanError
         )
     }
 

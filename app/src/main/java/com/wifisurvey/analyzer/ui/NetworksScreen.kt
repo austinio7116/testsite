@@ -150,6 +150,10 @@ fun NetworksScreen(viewModel: AppViewModel, modifier: Modifier = Modifier) {
             }
         }
 
+        if (wifi.accessPoints.isEmpty()) {
+            item { DiagnosticsCard(wifi = wifi, onRescan = viewModel::forceScan) }
+        }
+
         item {
             Text(
                 "${visible.size} networks visible",

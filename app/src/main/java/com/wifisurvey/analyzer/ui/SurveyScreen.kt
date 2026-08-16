@@ -1,5 +1,6 @@
 package com.wifisurvey.analyzer.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -9,10 +10,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.DirectionsWalk
@@ -38,7 +41,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -76,7 +79,9 @@ fun SurveyScreen(viewModel: AppViewModel, modifier: Modifier = Modifier) {
 
         Spacer(Modifier.height(8.dp))
 
-        Box(Modifier.fillMaxWidth().weight(1f)) {
+        // A minimum height stops the surrounding controls from squeezing the
+        // plan down to a sliver on shorter screens.
+        Box(Modifier.fillMaxWidth().weight(1f).heightIn(min = 220.dp)) {
             FloorPlanView(
                 survey = ui.survey,
                 heatmap = heatmap,
@@ -101,19 +106,28 @@ fun SurveyScreen(viewModel: AppViewModel, modifier: Modifier = Modifier) {
             )
 
             if (ui.survey.samples.isEmpty() && !ui.drawingWalls) {
-                EmptyPlanHint(Modifier.align(Alignment.Center))
+                // Anchored to the bottom rather than centred: a centred card
+                // covered the whole plan, so the room looked like it was not
+                // being drawn at all.
+                EmptyPlanHint(Modifier.align(Alignment.BottomCenter))
             }
         }
 
         Spacer(Modifier.height(8.dp))
 
-        ScanStatusRow(
-            visibleAps = wifi.accessPoints.size,
-            samples = ui.survey.samples.size,
-            throttled = wifi.throttled,
-            connectedRssi = wifi.connectedRssi,
-            onRescan = viewModel::forceScan
-        )
+        if (wifi.accessPoints.isEmpty()) {
+            // With nothing detected the counters say nothing useful; show the
+            // reason instead.
+            DiagnosticsCard(wifi = wifi, onRescan = viewModel::forceScan)
+        } else {
+            ScanStatusRow(
+                visibleAps = wifi.accessPoints.size,
+                samples = ui.survey.samples.size,
+                throttled = wifi.throttled,
+                connectedRssi = wifi.connectedRssi,
+                onRescan = viewModel::forceScan
+            )
+        }
 
         Spacer(Modifier.height(8.dp))
 
@@ -298,15 +312,18 @@ private fun WalkStatusBar(
 
 @Composable
 private fun EmptyPlanHint(modifier: Modifier = Modifier) {
-    SectionCard(modifier = modifier.padding(24.dp)) {
-        Text("Map this room", fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
-        Spacer(Modifier.height(6.dp))
+    Box(
+        modifier
+            .padding(8.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.88f))
+            .padding(horizontal = 12.dp, vertical = 8.dp)
+    ) {
         Text(
-            "1. Set the room size to match reality.\n" +
-                "2. Stand somewhere, then tap that spot on the plan.\n" +
-                "3. Repeat around the room — corners, doorways, dead spots.\n\n" +
-                "The heatmap builds as you go. Long-press a dot to delete it.",
-            fontSize = 13.sp,
+            "Stand somewhere in the room, then tap that spot on the plan above. " +
+                "Repeat around the room — the heatmap builds as you go. " +
+                "Long-press a dot to delete it.",
+            fontSize = 12.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }

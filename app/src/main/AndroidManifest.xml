@@ -8,18 +8,17 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <!--
-      Scan results are location-sensitive: API <= 32 requires fine location,
-      API 33+ accepts NEARBY_WIFI_DEVICES instead.
+      Scan results are location-sensitive. API 33+ introduced
+      NEARBY_WIFI_DEVICES, but plenty of devices still only return a
+      populated scan list when the app also holds fine location, so both are
+      declared on every API level and either one is accepted at runtime.
+      NEARBY_WIFI_DEVICES deliberately does NOT carry neverForLocation:
+      that flag makes some OEM builds withhold scan results entirely.
     -->
-    <uses-permission
-        android:name="android.permission.ACCESS_FINE_LOCATION"
-        android:maxSdkVersion="32" />
-    <uses-permission
-        android:name="android.permission.ACCESS_COARSE_LOCATION"
-        android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission
         android:name="android.permission.NEARBY_WIFI_DEVICES"
-        android:usesPermissionFlags="neverForLocation"
         tools:targetApi="33" />
 
     <!-- Step counting for the walk-mode dead-reckoning tracker -->

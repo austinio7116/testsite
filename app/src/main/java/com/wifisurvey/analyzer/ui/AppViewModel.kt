@@ -89,7 +89,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---------------------------------------------------------------- scanning
 
-    fun forceScan() = scanner.requestScanIfAllowed(force = true)
+    fun forceScan() {
+        scanner.requestScanIfAllowed(force = true)
+        // Re-read the cache straight away so the button gives feedback now
+        // rather than at the next poll tick.
+        scanner.refreshFromCache()
+    }
 
     fun trackAp(bssid: String?) {
         _trackedBssid.value = bssid

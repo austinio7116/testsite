@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.location.LocationManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
@@ -14,6 +15,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -30,6 +32,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -38,6 +41,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -50,6 +54,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import androidx.core.location.LocationManagerCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.wifisurvey.analyzer.ui.AppViewModel
@@ -106,6 +114,21 @@ private fun AppRoot() {
         if (!granted) launcher.launch(requiredPermissions())
     }
 
+    // Re-check whenever the app comes back to the foreground: without this a
+    // permission granted from system Settings never takes effect, and the app
+    // stays gated forever.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                granted = hasScanPermission(context)
+                if (granted) viewModel.forceScan()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
     LaunchedEffect(ui.message) {
         ui.message?.let {
             snackbar.showSnackbar(it)
@@ -154,6 +177,14 @@ private fun AppRoot() {
             if (!granted) {
                 PermissionGate(
                     onRequest = { launcher.launch(requiredPermissions()) },
+                    onOpenSettings = {
+                        context.startActivity(
+                            Intent(
+                                Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                Uri.fromParts("package", context.packageName, null)
+                            )
+                        )
+                    },
                     modifier = Modifier.padding(12.dp)
                 )
             } else if (!wifi.wifiEnabled) {
@@ -178,23 +209,28 @@ private fun AppRoot() {
 }
 
 @Composable
-private fun PermissionGate(onRequest: () -> Unit, modifier: Modifier = Modifier) {
+private fun PermissionGate(
+    onRequest: () -> Unit,
+    onOpenSettings: () -> Unit,
+    modifier: Modifier = Modifier
+) {
     SectionCard(modifier = modifier) {
         Text("Permission needed", fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.height(6.dp))
         Text(
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                "Android requires the \"nearby Wi-Fi devices\" permission before any app " +
-                    "can read scan results. This app never uses it to derive your location."
-            } else {
-                "Android ties Wi-Fi scan results to location permission — without it the " +
-                    "system returns an empty list to every app."
-            },
+            "Android returns an empty network list to every app that lacks location or " +
+                "nearby-devices permission. On Android 12 and below you must pick " +
+                "\"Precise\", not \"Approximate\".",
             fontSize = 13.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Spacer(Modifier.height(10.dp))
-        Button(onClick = onRequest) { Text("Grant permission") }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = onRequest) { Text("Grant permission") }
+            // The system stops showing the dialog after two refusals, so the
+            // only remaining route is the app's settings page.
+            OutlinedButton(onClick = onOpenSettings) { Text("App settings") }
+        }
     }
 }
 
@@ -227,33 +263,37 @@ private fun LocationServicesNotice(onOpenSettings: () -> Unit, modifier: Modifie
     }
 }
 
+/**
+ * Ask for location *and* nearby-devices together. Either one can unlock scan
+ * results depending on the device, so requesting only the newest permission
+ * leaves no fallback when a build declines to honour it.
+ */
 private fun requiredPermissions(): Array<String> = buildList {
+    add(Manifest.permission.ACCESS_FINE_LOCATION)
+    add(Manifest.permission.ACCESS_COARSE_LOCATION)
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
         add(Manifest.permission.NEARBY_WIFI_DEVICES)
-    } else {
-        add(Manifest.permission.ACCESS_FINE_LOCATION)
-        add(Manifest.permission.ACCESS_COARSE_LOCATION)
     }
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
         add(Manifest.permission.ACTIVITY_RECOGNITION)
     }
 }.toTypedArray()
 
-private fun hasScanPermission(context: Context): Boolean {
-    val permission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-        Manifest.permission.NEARBY_WIFI_DEVICES
-    } else {
-        Manifest.permission.ACCESS_FINE_LOCATION
-    }
-    return ContextCompat.checkSelfPermission(context, permission) ==
+private fun isGranted(context: Context, permission: String): Boolean =
+    ContextCompat.checkSelfPermission(context, permission) ==
         PackageManager.PERMISSION_GRANTED
+
+private fun hasScanPermission(context: Context): Boolean {
+    val nearby = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+        isGranted(context, Manifest.permission.NEARBY_WIFI_DEVICES)
+    val location = isGranted(context, Manifest.permission.ACCESS_FINE_LOCATION) ||
+        isGranted(context, Manifest.permission.ACCESS_COARSE_LOCATION)
+    return nearby || location
 }
 
-/** Below Android 13 the platform also insists location services are switched on. */
+/** Most builds withhold scan results entirely while location services are off. */
 private fun needsLocationServices(context: Context): Boolean {
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) return false
     val manager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
         ?: return false
-    return !manager.isProviderEnabled(LocationManager.GPS_PROVIDER) &&
-        !manager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
+    return !LocationManagerCompat.isLocationEnabled(manager)
 }
