@@ -130,7 +130,8 @@ class WifiScanner(private val context: Context) {
 
         @Suppress("DEPRECATION")
         val info = runCatching { wifiManager.connectionInfo }.getOrNull()
-        val connectedBssid = info?.bssid?.takeIf { it != "02:00:00:00:00:00" && it != null }
+        // A redacted BSSID means the platform withheld it; treat that as "not connected".
+        val connectedBssid = info?.bssid?.takeIf { it != "02:00:00:00:00:00" }
         val connectedSsid = info?.ssid
             ?.removeSurrounding("\"")
             ?.takeIf { it.isNotBlank() && it != "<unknown ssid>" }
